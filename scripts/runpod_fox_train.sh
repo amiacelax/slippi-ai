@@ -2,7 +2,15 @@
 set -e
 source /workspace/slippi-ai/.venv/bin/activate
 cd /workspace/slippi-ai
-export DOLPHIN_PATH=/workspace/dolphin/squashfs-root/usr/bin
+
+# libmelee expects a path containing "netplay" and an AppImage-named binary.
+DOLPHIN_BIN=/workspace/dolphin/squashfs-root/usr/bin/dolphin-emu
+DOLPHIN_LIB=/workspace/dolphin/squashfs-root/usr/lib
+mkdir -p /workspace/dolphin/netplay
+ln -sfn "$DOLPHIN_BIN" /workspace/dolphin/netplay/Slippi_Online-x86_64.AppImage
+export DOLPHIN_PATH=/workspace/dolphin/netplay
+export LD_LIBRARY_PATH="${DOLPHIN_LIB}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
 export ISO_PATH="/workspace/iso/Super Smash Bros. Melee (USA) (v1.02).iso"
 export TEACHER=/workspace/models/medium-v2
 export EXPT_DIR=/workspace/experiments/fox-stay-on-stage

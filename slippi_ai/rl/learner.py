@@ -497,10 +497,37 @@ class Learner(tp.Generic[ControllerType]):
 
   def restore_from_imitation(self, imitation_state: dict):
     tf_state = self.get_vars()
-    state = {k: imitation_state[k] for k in tf_state}
-    tf.nest.map_structure(
-        lambda var, val: var.assign(val),
-        tf_state, state)
+    # Older imitation pickles (e.g. medium-v2) may omit value_function /
+    # value optimizer keys. Keep freshly initialized vars for those.
+    assign_vars = {}
+    assign_vals = {}
+    for key, vars_tree in tf_state.items():
+      if key not in imitation_state:
+        logging.warning(
+            'Imitation state missing %r; leaving initialized values', key)
+        continue
+      if key == 'optimizers':
+        opt_vars = {}
+        opt_vals = {}
+        for opt_name, opt_tree in vars_tree.items():
+          if opt_name not in imitation_state['optimizers']:
+            logging.warning(
+                'Imitation optimizers missing %r; leaving initialized',
+                opt_name)
+            continue
+          opt_vars[opt_name] = opt_tree
+          opt_vals[opt_name] = imitation_state['optimizers'][opt_name]
+        if opt_vars:
+          assign_vars[key] = opt_vars
+          assign_vals[key] = opt_vals
+        continue
+      assign_vars[key] = vars_tree
+      assign_vals[key] = imitation_state[key]
+
+    if assign_vars:
+      tf.nest.map_structure(
+          lambda var, val: var.assign(val),
+          assign_vars, assign_vals)
 
     # Unfortunately the tensorflow state includes the learning rate, so it will
     # be overridden by the imitation learning rate.

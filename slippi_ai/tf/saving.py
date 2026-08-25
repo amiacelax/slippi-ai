@@ -113,9 +113,17 @@ def load_policy_from_state(state: dict) -> policies.Policy:
   return policy
 
 # TODO: redirect to generic saving module
+class CustomUnpickler(pickle.Unpickler):
+  def find_class(self, module, name):
+    # Older pickles reference slippi_ai.embed; code now lives under tf.embed.
+    if module == 'slippi_ai.embed' or module.startswith('slippi_ai.embed.'):
+      module = module.replace('slippi_ai.embed', 'slippi_ai.tf.embed', 1)
+    return super().find_class(module, name)
+
+
 def load_state_from_disk(path: str) -> dict:
   with open(path, 'rb') as f:
-    return pickle.load(f)
+    return CustomUnpickler(f).load()
 
 def load_policy_from_disk(path: str) -> policies.Policy:
   state = load_state_from_disk(path)

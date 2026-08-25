@@ -3,6 +3,7 @@ import atexit
 import dataclasses
 import logging
 import os
+import subprocess
 from typing import Dict, Mapping, Optional, Iterator
 
 import fancyflags as ff
@@ -10,11 +11,94 @@ import portpicker
 
 import melee
 from melee.console import (
-   get_dolphin_version,
    DumpConfig,
    DolphinBuild,
+   DolphinVersion,
    default_dolphin_install_path,
+   get_exe_path,
 )
+import melee.console as melee_console
+
+
+def _get_dolphin_version(path: str, timeout: float = 10.0) -> DolphinVersion:
+  """Like melee.get_dolphin_version, but never hangs forever.
+
+  RunPod / Docker often make `dolphin --version` hang or blow up on env size.
+  ExiAI Ishiiruka returns exit code 1 for --version.
+  """
+  exe_path = get_exe_path(path)
+  try:
+    result = subprocess.run(
+        [exe_path, '--version'],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+  except subprocess.TimeoutExpired:
+    logging.warning(
+        'dolphin --version timed out after %ss; assuming ExiAI Ishiiruka',
+        timeout,
+    )
+    return DolphinVersion(
+        mainline=False, version='unknown', build=DolphinBuild.EXI_AI)
+
+  # Linux ExiAI Ishiiruka
+  if result.returncode == 1:
+    output = (result.stderr or result.stdout or '').strip()
+    contents = output.split(' - ')
+    if len(contents) >= 3 and contents[0] == 'Faster Melee' and contents[2] == 'ExiAI':
+      begin = contents[1].find('(') + 1
+      end = contents[1].find(')')
+      version = contents[1][begin:end] if begin > 0 and end > begin else 'unknown'
+      return DolphinVersion(
+          mainline=False, version=version, build=DolphinBuild.EXI_AI)
+    # Still treat exit 1 as ExiAI if stderr looks empty/odd on this build.
+    if 'ExiAI' in output or not output:
+      logging.warning(
+          'dolphin --version exit 1 (%r); assuming ExiAI', output[:200])
+      return DolphinVersion(
+          mainline=False, version='unknown', build=DolphinBuild.EXI_AI)
+
+  # Linux mainline
+  if result.returncode == 0:
+    output = (result.stdout or '').strip()
+    build = DolphinBuild.EXI_AI if 'ExiAI' in output else DolphinBuild.NETPLAY
+    return DolphinVersion(mainline=True, version=output or 'unknown', build=build)
+
+  # Linux Ishiiruka netplay
+  if result.returncode == 255:
+    return DolphinVersion(
+        mainline=False,
+        version=(result.stdout or '').strip() or 'unknown',
+        build=DolphinBuild.NETPLAY,
+    )
+
+  # Last resort: strings scan (fast, no dolphin process).
+  try:
+    strings = subprocess.run(
+        ['strings', exe_path],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if strings.returncode == 0 and 'ExiAI' in strings.stdout:
+      logging.warning(
+          'dolphin --version failed (rc=%s); strings found ExiAI',
+          result.returncode,
+      )
+      return DolphinVersion(
+          mainline=False, version='unknown', build=DolphinBuild.EXI_AI)
+  except (FileNotFoundError, subprocess.TimeoutExpired):
+    pass
+
+  raise RuntimeError(
+      f'Unexpected return code {result.returncode} from dolphin: '
+      f'stdout={result.stdout!r} stderr={result.stderr!r}'
+  )
+
+
+# Console() also calls get_dolphin_version; keep both paths non-blocking.
+melee_console.get_dolphin_version = _get_dolphin_version
 
 class Player(abc.ABC):
 
@@ -102,7 +186,7 @@ class Dolphin:
 
     # TODO: some of this logic should be moved to Console
     # Note: leave path as None to tell libmelee to look for the iso/user.json
-    version = get_dolphin_version(path or default_dolphin_install_path()[0])
+    version = _get_dolphin_version(path or default_dolphin_install_path()[0])
 
     if render is None:
       render = not headless

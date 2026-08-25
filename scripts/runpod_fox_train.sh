@@ -45,12 +45,14 @@ export EXPT_DIR=/workspace/experiments/fox-stay-on-stage
 mkdir -p "$EXPT_DIR"
 : > "$EXPT_DIR/train.log"
 
-# Start smaller so first connect is easier to debug; bump later if stable.
+# TF RL loop uses max_step (max_runtime is ignored here).
+# ~7s/step at 8 envs → 1200 steps ≈ 2+ hours.
 echo "Starting training..."
+export PYTHONUNBUFFERED=1
 nohup python slippi_ai/rl/run.py \
   --config.runtime.tag=fox-stay-on-stage \
   --config.runtime.expt_dir="$EXPT_DIR" \
-  --config.runtime.max_runtime=7200 \
+  --config.runtime.max_step=1200 \
   --config.runtime.log_interval=60 \
   --config.runtime.save_interval=300 \
   --config.dolphin.path="$DOLPHIN_PATH" \

@@ -35,12 +35,14 @@ def _get_dolphin_version(path: str, timeout: float = 10.0) -> DolphinVersion:
         timeout=timeout,
     )
   except subprocess.TimeoutExpired:
+    mainline = 'mainline' in exe_path.lower()
     logging.warning(
-        'dolphin --version timed out after %ss; assuming ExiAI Ishiiruka',
+        'dolphin --version timed out after %ss; assuming ExiAI (%s)',
         timeout,
+        'mainline' if mainline else 'Ishiiruka',
     )
     return DolphinVersion(
-        mainline=False, version='unknown', build=DolphinBuild.EXI_AI)
+        mainline=mainline, version='unknown', build=DolphinBuild.EXI_AI)
 
   # Linux ExiAI Ishiiruka
   if result.returncode == 1:
@@ -82,12 +84,14 @@ def _get_dolphin_version(path: str, timeout: float = 10.0) -> DolphinVersion:
         timeout=5,
     )
     if strings.returncode == 0 and 'ExiAI' in strings.stdout:
+      mainline = 'mainline' in exe_path.lower() or 'mainline' in strings.stdout.lower()
       logging.warning(
-          'dolphin --version failed (rc=%s); strings found ExiAI',
+          'dolphin --version failed (rc=%s); strings found ExiAI (%s)',
           result.returncode,
+          'mainline' if mainline else 'Ishiiruka',
       )
       return DolphinVersion(
-          mainline=False, version='unknown', build=DolphinBuild.EXI_AI)
+          mainline=mainline, version='unknown', build=DolphinBuild.EXI_AI)
   except (FileNotFoundError, subprocess.TimeoutExpired):
     pass
 

@@ -23,6 +23,7 @@ from slippi_ai.types import (
   Buttons, Controller, Game, Player, Stick,
   Randall, FoDPlatforms, Item, Items,
 )
+from slippi_ai.teams.types_teams import TeamsGame
 from slippi_ai.controller_lib import LEGAL_BUTTONS
 from slippi_ai.data import Action, StateAction
 from slippi_ai.action_space import custom_v1 as cv1
@@ -733,12 +734,58 @@ class EmbedConfig(tp.Generic[Action]):
 
     return struct_embedding_from_nt("game", embedding)
 
+  def make_teams_game_embedding(self):
+    """
+    4-player Teams embed: ego | partner | opp0 | opp1.
+
+    Same PlayerConfig for all slots (warm-start copies medium-v2 p0/p1 into
+    ego/opp0; partner/opp1 initialized from those — see teams.warm_start).
+    """
+    embed_player = self.player.make_embedding()
+
+    if self.with_randall:
+      embed_xy = FloatEmbedding("randall_xy", scale=self.player.xy_scale)
+      embed_randall = struct_embedding_from_nt(
+          "randall", Randall(x=embed_xy, y=embed_xy))
+    else:
+      embed_randall = ordered_struct_embedding("randall", [], Randall)
+      assert embed_randall._size == 0
+
+    if self.with_fod:
+      embed_height = FloatEmbedding("fod_height", scale=self.player.xy_scale)
+      embed_fod = struct_embedding_from_nt(
+          "fod", FoDPlatforms(left=embed_height, right=embed_height))
+    else:
+      embed_fod = ordered_struct_embedding("fod", [], FoDPlatforms)
+      assert embed_fod._size == 0
+
+    embed_items = self.make_items_embedding()
+
+    embedding = TeamsGame(
+        ego=embed_player,
+        partner=embed_player,
+        opp0=embed_player,
+        opp1=embed_player,
+        stage=embed_stage,
+        randall=embed_randall,
+        fod_platforms=embed_fod,
+        items=embed_items,
+    )
+    return struct_embedding_from_nt("teams_game", embedding)
+
   def make_controller_embedding(self) -> Embedding[Controller, Action]:
     return self.controller.make_embedding()
 
   def make_state_action_embedding(self, num_names: int):
     return get_state_action_embedding(
         embed_game=self.make_game_embedding(),
+        embed_action=self.make_controller_embedding(),
+        num_names=num_names,
+    )
+
+  def make_teams_state_action_embedding(self, num_names: int):
+    return get_teams_state_action_embedding(
+        embed_game=self.make_teams_game_embedding(),
         embed_action=self.make_controller_embedding(),
         num_names=num_names,
     )
@@ -759,3 +806,19 @@ def get_state_action_embedding(
           one_hot_policy=OneHotPolicy.EMPTY),
   )
   return struct_embedding_from_nt("state_action", embedding)
+
+
+def get_teams_state_action_embedding(
+  embed_game: Embedding[TeamsGame, Any],
+  embed_action: Embedding[Controller, Action],
+  num_names: int,
+) -> Embedding[StateAction[tp.Any, Controller], StateAction[tp.Any, Action]]:
+  embedding = StateAction(
+      state=embed_game,
+      action=embed_action,
+      name=OneHotEmbedding(
+          'name', num_names,
+          dtype=NAME_DTYPE,
+          one_hot_policy=OneHotPolicy.EMPTY),
+  )
+  return struct_embedding_from_nt("teams_state_action", embedding)

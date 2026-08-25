@@ -89,11 +89,14 @@ class Dolphin:
       connect_code: Optional[str] = None,
       copy_home_directory: bool = False,
       min_slp_version: Optional[tuple[int, int, int]] = (3, 18, 0),
+      enable_teams: bool = False,
       **console_kwargs,
   ) -> None:
     self._players = players
     self.stage = stage
     self.min_slp_version = min_slp_version
+    self._enable_teams = enable_teams
+    self._teams_toggle_frames = 0
 
     platform = None
 
@@ -243,6 +246,24 @@ class Dolphin:
             autostart=self._autostart and i == 0 and menu_frames > 30,
             swag=False,
             **player.menuing_kwargs(i))
+
+      # Optional: toggle Versus Teams on CSS (Y). Fail-soft if build ignores it.
+      if (
+          self._enable_teams
+          and not getattr(gamestate, "is_teams", False)
+          and gamestate.menu_state in (
+              melee.Menu.CHARACTER_SELECT,
+              melee.Menu.SLIPPI_ONLINE_CSS,
+          )
+          and self._menuing_controllers
+          and self._teams_toggle_frames < 240
+      ):
+        leader_ctrl = self._menuing_controllers[0][0]
+        if self._teams_toggle_frames % 2 == 0:
+          leader_ctrl.press_button(melee.Button.BUTTON_Y)
+        else:
+          leader_ctrl.release_button(melee.Button.BUTTON_Y)
+        self._teams_toggle_frames += 1
 
       gamestate = self.next_gamestate()
       menu_frames += 1

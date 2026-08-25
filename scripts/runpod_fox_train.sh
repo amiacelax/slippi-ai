@@ -25,22 +25,33 @@ EOF
 chmod +x "$WRAPPER"
 export DOLPHIN_PATH="$NETPLAY"
 
-# Smoke-test dolphin before launching training.
-if ! "$WRAPPER" --version >/tmp/dolphin_version.txt 2>&1; then
-  echo "Dolphin failed to start. Output:"
+echo "Smoke-testing dolphin (10s timeout)..."
+# ExiAI returns 1 for --version; Ishiiruka netplay returns 255; mainline returns 0.
+set +e
+timeout 10 "$WRAPPER" --version >/tmp/dolphin_version.txt 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 124 ]; then
+  echo "Dolphin --version hung (timeout). Trying strings fallback..."
+  strings "$ROOT/usr/bin/dolphin-emu" | grep -E 'ExiAI|Faster Melee|Slippi' | head -5
+  echo "Continuing without version smoke-test."
+elif [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ] && [ "$rc" -ne 255 ]; then
+  echo "Dolphin failed to start (exit $rc). Output:"
   cat /tmp/dolphin_version.txt || true
   echo "Missing libs (if any):"
   env -i LD_LIBRARY_PATH="$ROOT/usr/lib:$ROOT/usr/lib/x86_64-linux-gnu:$ROOT/lib:$ROOT/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu" \
     ldd "$ROOT/usr/bin/dolphin-emu" 2>/dev/null | grep "not found" || true
   exit 1
+else
+  echo "Dolphin OK (exit $rc): $(tr '\n' ' ' </tmp/dolphin_version.txt)"
 fi
-echo "Dolphin OK: $(tr '\n' ' ' </tmp/dolphin_version.txt)"
 
 export ISO_PATH="/workspace/iso/Super Smash Bros. Melee (USA) (v1.02).iso"
 export TEACHER=/workspace/models/medium-v2
 export EXPT_DIR=/workspace/experiments/fox-stay-on-stage
 mkdir -p "$EXPT_DIR"
 : > "$EXPT_DIR/train.log"
+echo "Starting training..."
 nohup python slippi_ai/rl/run.py \
   --config.runtime.tag=fox-stay-on-stage \
   --config.runtime.expt_dir="$EXPT_DIR" \

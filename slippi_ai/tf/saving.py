@@ -122,6 +122,10 @@ class CustomUnpickler(pickle.Unpickler):
 
 
 def load_state_from_disk(path: str) -> dict:
+  # Ensure old pickle module path resolves even before find_class runs.
+  import sys
+  import slippi_ai.tf.embed as _tf_embed
+  sys.modules.setdefault('slippi_ai.embed', _tf_embed)
   with open(path, 'rb') as f:
     return CustomUnpickler(f).load()
 

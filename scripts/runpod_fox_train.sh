@@ -5,6 +5,7 @@ cd /workspace/slippi-ai
 
 # Extracted ExiAI AppImage (no FUSE). libmelee wants a path containing
 # "netplay" and a binary named Slippi_Online-x86_64.AppImage.
+# Do NOT use AppRun: RunPod's huge LD_LIBRARY_PATH triggers E2BIG.
 ROOT=/workspace/dolphin/squashfs-root
 NETPLAY=/workspace/dolphin/netplay
 WRAPPER="$NETPLAY/Slippi_Online-x86_64.AppImage"
@@ -12,22 +13,25 @@ mkdir -p "$NETPLAY"
 cat > "$WRAPPER" <<'EOF'
 #!/bin/bash
 ROOT=/workspace/dolphin/squashfs-root
-export LD_LIBRARY_PATH="$ROOT/usr/lib:$ROOT/usr/lib/x86_64-linux-gnu:$ROOT/lib:$ROOT/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-if [ -x "$ROOT/AppRun" ]; then
-  exec "$ROOT/AppRun" "$@"
-fi
-exec "$ROOT/usr/bin/dolphin-emu" "$@"
+DOLPHIN_LD="$ROOT/usr/lib:$ROOT/usr/lib/x86_64-linux-gnu:$ROOT/lib:$ROOT/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu"
+# Clean env for dolphin only — RunPod CUDA paths make argv/env too large for AppRun.
+exec env -i \
+  HOME="${HOME:-/root}" \
+  USER="${USER:-root}" \
+  PATH="/usr/bin:/bin:/usr/local/bin" \
+  LD_LIBRARY_PATH="$DOLPHIN_LD" \
+  "$ROOT/usr/bin/dolphin-emu" "$@"
 EOF
 chmod +x "$WRAPPER"
 export DOLPHIN_PATH="$NETPLAY"
-export LD_LIBRARY_PATH="$ROOT/usr/lib:$ROOT/usr/lib/x86_64-linux-gnu:$ROOT/lib:$ROOT/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # Smoke-test dolphin before launching training.
 if ! "$WRAPPER" --version >/tmp/dolphin_version.txt 2>&1; then
   echo "Dolphin failed to start. Output:"
   cat /tmp/dolphin_version.txt || true
   echo "Missing libs (if any):"
-  ldd "$ROOT/usr/bin/dolphin-emu" 2>/dev/null | grep "not found" || true
+  env -i LD_LIBRARY_PATH="$ROOT/usr/lib:$ROOT/usr/lib/x86_64-linux-gnu:$ROOT/lib:$ROOT/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu" \
+    ldd "$ROOT/usr/bin/dolphin-emu" 2>/dev/null | grep "not found" || true
   exit 1
 fi
 echo "Dolphin OK: $(tr '\n' ' ' </tmp/dolphin_version.txt)"
